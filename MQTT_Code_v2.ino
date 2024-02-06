@@ -4,7 +4,7 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 #include <Ultrasonic.h>
-
+#include <MQ135.h>
 
 // WiFi credentials
 const char* ssid = "ANDY";
@@ -22,10 +22,14 @@ const char* mqtt_password = "Metju123";
 #define BME_SCL D1  // Use D1 and D2 for BME280 sensor
 #define BME_SDA D2
 
+#define GAS_SENSOR_ANALOG_PIN A0
+#define RZERO 185 // Replace this value with your calibrated RZero !!!
+
 Ultrasonic ultrasonic(TRIGGER_PIN, ECHO_PIN);
 WiFiClient espClient;
 PubSubClient client(espClient);
 Adafruit_BME280 bme;  // BME280 object
+MQ135 gasSensor(GAS_SENSOR_ANALOG_PIN, RZERO);
 
 void setup() {
   Serial.begin(9600);
@@ -63,7 +67,7 @@ void loop() {
 
   int distance = ultrasonic.read();
 
-  if(distance <= 3 || distance >= 200) {
+  if (distance <= 3 || distance >= 200) {
     distance = -1;    // out of range - bad value
   }
 
@@ -89,22 +93,44 @@ void loop() {
   Serial.print(pressure);
   Serial.println(" hPa");
 
+  // Gas Sensor
+  float rzero = gasSensor.getRZero(); // Get RZero value
+  float correctedResistance = gasSensor.getCorrectedResistance(20, 33); // Assuming 20°C & 33% humidity
+  float ppm = gasSensor.getCorrectedPPM(20, 33); // Assuming 20°C & 33% humidity
+
+  Serial.println("---------------");
+
+  Serial.print("Calibrated RZero: ");
+  Serial.println(rzero);
+
+  Serial.print("Corrected Resistance: ");
+  Serial.println(correctedResistance);
+
+  Serial.print("Corrected PPM: ");
+  Serial.println(ppm);
+
   // Create the HTTP client
-  WiFiClient client;
+  WiFiClient http_client;
   const int httpPort = 80;
-  String url = "/script2.php?distance=" + String(distance) + "&temperature=" + String(temperature) + "&humidity=" + String(humidity) + "&pressure=" + String(pressure);
+  String url = "/script2.php?distance=" + String(distance) +
+               "&temperature=" + String(temperature) +
+               "&humidity=" + String(humidity) +
+               "&pressure=" + String(pressure) +
+               "&rzero=" + String(rzero) +
+               "&correctedResistance=" + String(correctedResistance) +
+               "&ppm=" + String(ppm);
 
-  // Serial.println("Constructed URL: " + url);
-
-  if (client.connect("192.168.0.74", httpPort)) {
-    client.print(String("GET ") + url + " HTTP/1.1\r\n" + "Host: your_server_ip\r\n" + "Connection: close\r\n\r\n");
+  if (http_client.connect("192.168.0.74", httpPort)) {
+    http_client.print(String("GET ") + url + " HTTP/1.1\r\n" + "Host: your_server_ip\r\n" + "Connection: close\r\n\r\n");
     delay(10);
-    client.stop();
+    http_client.stop();
   } else {
     Serial.println("Unable to connect to server");
   }
-  delay(3000);
+
+  delay(4000);
 }
+
 
 void callback(char* topic, byte* payload, unsigned int length) {
   // Handle MQTT messages if needed
