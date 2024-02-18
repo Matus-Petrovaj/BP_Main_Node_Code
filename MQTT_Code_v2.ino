@@ -25,9 +25,13 @@ const char* mqtt_password = "Metju123";
 #define GAS_SENSOR_ANALOG_PIN A0
 #define RZERO 172  // Replace this value with your calibrated RZero !!!
 
-#define DISTANCE_SENSOR_THRESHOLD 5.0
-#define BME_SENSOR_THRESHOLD 5.0
-#define GAS_SENSOR_THRESHOLD 5.0
+#define MIN_PERCENTAGE_CHANGE 1.0
+#define AVG_PERCENTAGE_CHANGE 5.0
+#define MAX_PERCENTAGE_CHANGE 10.0
+
+#define FAST_TIME_INTERVAL 5000
+#define AVG_TIME_INTERVAL 10000
+#define SLOW_TIME_INTERVAL 15000
 
 Ultrasonic ultrasonic(TRIGGER_PIN, ECHO_PIN);
 WiFiClient espClient;
@@ -80,42 +84,58 @@ void loop() {
 
   client.loop();
 
-  if (millis() - ultrasonicLastUpdateTime >= 5000) {  // Update every 5 seconds
-    int distance = measureUltrasonic();
-    sendSensorData(distance, "ultrasonic", formerDistanceValue, DISTANCE_SENSOR_THRESHOLD);
+  Serial.println("------------------------------------------------");
+  unsigned long currentMillis = millis();  // Get the current time
+
+  int currentDistanceValue = measureUltrasonic();
+  if (currentMillis - ultrasonicLastUpdateTime >= calculateInterval(formerDistanceValue, currentDistanceValue)) {
+    sendSensorData(currentDistanceValue, "ultrasonic", formerDistanceValue);
     ultrasonicLastUpdateTime = millis();
   }
 
-  if (millis() - bme280LastUpdateTime >= 5000) {  // Update every 10 seconds
-    float temperature, humidity, pressure;
-    measureBME280(temperature, humidity, pressure);
-    sendSensorData(temperature, humidity, pressure, "bme280", formerBmeTemperatureValue, formerBmeHumidityValue, formerBmePressureValue, BME_SENSOR_THRESHOLD);
+  float currentTemperatureValue, currentHumidityValue, currentPressureValue;
+  measureBME280(currentTemperatureValue, currentHumidityValue, currentPressureValue);
+  if (currentMillis - bme280LastUpdateTime >= calculateBmeInterval(formerBmeTemperatureValue, formerBmeHumidityValue, formerBmePressureValue, currentTemperatureValue, currentHumidityValue, currentPressureValue)) {
+    sendSensorData(currentTemperatureValue, currentHumidityValue, currentPressureValue, "bme280", formerBmeTemperatureValue, formerBmeHumidityValue, formerBmePressureValue);
     bme280LastUpdateTime = millis();
   }
 
-  if (millis() - gasSensorLastUpdateTime >= 5000) {  // Update every 15 seconds
-    int ppm = measureGasSensor();
-    sendSensorData(ppm, "gasSensor", formerGasSensorValue, GAS_SENSOR_THRESHOLD);
-    // Assuming gas sensor data is sent immediately without delay
+  int currentGasSensorValue = measureGasSensor();
+  if (currentMillis - gasSensorLastUpdateTime >= calculateInterval(formerGasSensorValue, currentGasSensorValue)) {
+    sendSensorData(currentGasSensorValue, "gasSensor", formerGasSensorValue);
     gasSensorLastUpdateTime = millis();
   }
 
-  delay(1000);  // A small delay to avoid high CPU usage
+  delay(2000);  // A small delay to avoid high CPU usage
 }
 
-bool isChangeExceedsPercentage(float formerValue, float currentValue, float percentageThreshold) {
-  // Exclude the initial -1 value from percentage calculation
-  if (formerValue == -1) {
-    return true;
-  }
-  // Calculate the absolute change between former and current values
+unsigned long calculateInterval(float formerValue, float currentValue) {
   float absoluteChange = abs(formerValue - currentValue);
-
-  // Calculate the percentage change
   float percentageChange = (absoluteChange / formerValue) * 100.0;
 
-  // Check if the percentage change exceeds the threshold
-  return (percentageChange > percentageThreshold);
+  if (percentageChange <= MIN_PERCENTAGE_CHANGE) {
+    return SLOW_TIME_INTERVAL;
+  } else if (percentageChange <= AVG_PERCENTAGE_CHANGE) {
+    return AVG_TIME_INTERVAL;
+  } else {
+    return FAST_TIME_INTERVAL;
+  }
+}
+
+unsigned long calculateBmeInterval(float formerValue1, float formerValue2, float formerValue3, float currentTemperature, float currentHumidity, float currentPressure) {
+  float temperatureChange = abs(formerValue1 - currentTemperature) / formerValue1 * 100.0;
+  float humidityChange = abs(formerValue2 - currentHumidity) / formerValue2 * 100.0;
+  float pressureChange = abs(formerValue3 - currentPressure) / formerValue3 * 100.0;
+
+  float maxChange = max(temperatureChange, max(humidityChange, pressureChange));
+
+  if (maxChange <= MIN_PERCENTAGE_CHANGE) {
+    return SLOW_TIME_INTERVAL;
+  } else if (maxChange <= AVG_PERCENTAGE_CHANGE) {
+    return AVG_TIME_INTERVAL;
+  } else {
+    return FAST_TIME_INTERVAL;
+  }
 }
 
 int measureUltrasonic() {
@@ -172,13 +192,7 @@ int measureGasSensor() {
 }
 
 // For gas and distance sensors
-void sendSensorData(int value, const char* sensorType, float& formerValue, float percentageThreshold) {
-  // Check if the percentage change exceeds the threshold
-  if (!isChangeExceedsPercentage(formerValue, value, percentageThreshold)) {
-    Serial.println("Change does not exceed the threshold. Skipping data transmission.");
-    return;
-  }
-
+void sendSensorData(int value, const char* sensorType, float& formerValue) {
   // Create the HTTP client
   WiFiClient http_client;
   const int httpPort = 80;
@@ -192,21 +206,14 @@ void sendSensorData(int value, const char* sensorType, float& formerValue, float
     // Update formerValue after successful data transmission
     formerValue = value;
 
+    Serial.println(String(sensorType) + " value sent");
   } else {
     Serial.println("Unable to connect to server");
   }
 }
 
 // For bme sensor
-void sendSensorData(float value1, float value2, float value3, const char* sensorType, float& formerValue1, float& formerValue2, float& formerValue3, float percentageThreshold) {
-  // Check if the percentage change exceeds the threshold
-  if (!isChangeExceedsPercentage(formerValue1, value1, percentageThreshold) &&
-      !isChangeExceedsPercentage(formerValue2, value2, percentageThreshold) &&
-      !isChangeExceedsPercentage(formerValue3, value3, percentageThreshold)) {
-    Serial.println("Change does not exceed the threshold. Skipping data transmission.");
-    return;
-  }
-
+void sendSensorData(float value1, float value2, float value3, const char* sensorType, float& formerValue1, float& formerValue2, float& formerValue3) {
   // Create the HTTP client
   WiFiClient http_client;
   const int httpPort = 80;
@@ -222,6 +229,7 @@ void sendSensorData(float value1, float value2, float value3, const char* sensor
     formerValue2 = value2;
     formerValue3 = value3;
 
+    Serial.println("BME values sent");
   } else {
     Serial.println("Unable to connect to server");
   }
