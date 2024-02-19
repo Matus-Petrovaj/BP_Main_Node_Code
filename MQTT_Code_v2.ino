@@ -6,44 +6,55 @@
 #include <Ultrasonic.h>
 #include <MQ135.h>
 
-// WiFi credentials
+// WiFi parametre
 const char* ssid = "ANDY";
 const char* password = "feda43WEKAjeda34..BASEge";
 
-// MQTT broker details
+// MQTT broker parametre
 const char* mqtt_server = "192.168.0.74";
 const int mqtt_port = 1883;
 const char* mqtt_user = "mqtt_matus";
 const char* mqtt_password = "Metju123";
 
-#define TRIGGER_PIN D5  // Change the pins for the ultrasonic sensor
+// Definicie pre piny ultrasonickeho senzora
+#define TRIGGER_PIN D5
 #define ECHO_PIN D6
 
-#define BME_SCL D1  // Use D1 and D2 for BME280 sensor
+// Definicie pre piny ultrasonickeho senzora
+#define BME_SCL D1
 #define BME_SDA D2
 
 #define GAS_SENSOR_ANALOG_PIN A0
-#define RZERO 172  // Replace this value with your calibrated RZero !!!
+// Hodnota RZero pre plynovy senzor MQ-135, potrebne vlozit spravne nakalibrovanu hodnotu
+#define RZERO 115
 
-#define MIN_PERCENTAGE_CHANGE 1.0
+// Percentualne makra pre pracu s meniacimi sa hodnotami
+#define EXTRA_SMALL_PERCENTAGE_CHANGE 1.0
+#define SMALL_PERCENTAGE_CHANGE 3.0
 #define AVG_PERCENTAGE_CHANGE 5.0
-#define MAX_PERCENTAGE_CHANGE 10.0
+#define LARGE_PERCENTAGE_CHANGE 7.0
+#define EXTRA_LARGE_PERCENTAGE_CHANGE 10.0
 
+// Makra pre reprezentaciu intervalov odosielania(v milisekundach)
+#define EXTRA_FAST_TIME_INTERVAL 3000
 #define FAST_TIME_INTERVAL 5000
 #define AVG_TIME_INTERVAL 10000
 #define SLOW_TIME_INTERVAL 15000
+#define EXTRA_SLOW_TIME_INTERVAL 20000
 
+// Potrebne inicializacie komponentov
 Ultrasonic ultrasonic(TRIGGER_PIN, ECHO_PIN);
 WiFiClient espClient;
 PubSubClient client(espClient);
 Adafruit_BME280 bme;  // BME280 object
 MQ135 gasSensor(GAS_SENSOR_ANALOG_PIN, RZERO);
 
+// Inicializacia premennych pre zaznamenavanie poslednej aktualizacie(cas)
 unsigned long ultrasonicLastUpdateTime = 0;
 unsigned long bme280LastUpdateTime = 0;
 unsigned long gasSensorLastUpdateTime = 0;
 
-// Initialize former values with initial readings
+// Inicializacia predoslych premennych pre vypocet intervalov odosielania
 float formerDistanceValue = 0.0;
 float formerBmeTemperatureValue = 0.0;
 float formerBmeHumidityValue = 0.0;
@@ -67,9 +78,12 @@ void setup() {
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
 
-  Wire.begin(BME_SDA, BME_SCL);   // Initialize I2C communication
-  bool status = bme.begin(0x77);  // BME280 address is 0x77
+  // Inicializacia I2C komunikacie
+  Wire.begin(BME_SDA, BME_SCL);
+  // BME280 adresa je 0x77
+  bool status = bme.begin(0x77);
 
+  // chybovy vypis pri nespravnom hardverovom zapojeni senzora BME280
   if (!status) {
     Serial.println("Could not find a valid BME280 sensor, check wiring!");
     while (1)
@@ -87,6 +101,8 @@ void loop() {
   Serial.println("------------------------------------------------");
   unsigned long currentMillis = millis();  // Get the current time
 
+  // Nasledujuce podmienky sluzia pre meranie hodnot, nasledne porovnanie s predoslou hodnotou, na zaklade ktoreho je vyhodnoteny interval
+  // odosielania a proces samotneho odosielania dat
   int currentDistanceValue = measureUltrasonic();
   if (currentMillis - ultrasonicLastUpdateTime >= calculateInterval(formerDistanceValue, currentDistanceValue)) {
     sendSensorData(currentDistanceValue, "ultrasonic", formerDistanceValue);
@@ -106,38 +122,55 @@ void loop() {
     gasSensorLastUpdateTime = millis();
   }
 
-  delay(2000);  // A small delay to avoid high CPU usage
+  // Oneskorenie aby sme predisli pretazeniu CPU
+  delay(2000);
 }
 
+// Funkcia pre kalkulaciu intervalu odosielania na zaklade aktualnej a predoslej hodnoty na zaklade percentualneho porovnania a
+// nasledne priradenie spravneho casoveho intervalu
 unsigned long calculateInterval(float formerValue, float currentValue) {
   float absoluteChange = abs(formerValue - currentValue);
   float percentageChange = (absoluteChange / formerValue) * 100.0;
 
-  if (percentageChange <= MIN_PERCENTAGE_CHANGE) {
+  // Priradenie individualnych percentualnych zmien k prisluchajucim casovym intervalom
+  if (percentageChange <= EXTRA_SMALL_PERCENTAGE_CHANGE) {
+    return EXTRA_SLOW_TIME_INTERVAL;
+  } else if (percentageChange <= SMALL_PERCENTAGE_CHANGE) {
     return SLOW_TIME_INTERVAL;
   } else if (percentageChange <= AVG_PERCENTAGE_CHANGE) {
     return AVG_TIME_INTERVAL;
-  } else {
+  } else if (percentageChange <= LARGE_PERCENTAGE_CHANGE) {
     return FAST_TIME_INTERVAL;
+  } else {
+    return EXTRA_FAST_TIME_INTERVAL;
   }
 }
 
+// Funkcia podobna k calculateInterval, akurat optimalizovana pre BME280 senzor
 unsigned long calculateBmeInterval(float formerValue1, float formerValue2, float formerValue3, float currentTemperature, float currentHumidity, float currentPressure) {
   float temperatureChange = abs(formerValue1 - currentTemperature) / formerValue1 * 100.0;
   float humidityChange = abs(formerValue2 - currentHumidity) / formerValue2 * 100.0;
   float pressureChange = abs(formerValue3 - currentPressure) / formerValue3 * 100.0;
 
+  // Na rozdiel od ostatnych senzorov, pri tomto senzore porovnavame az tri merane hodnoty a vyberieme najvacsi percentualny rozdiel
+  // a nasledne priradime vhodny interval
   float maxChange = max(temperatureChange, max(humidityChange, pressureChange));
 
-  if (maxChange <= MIN_PERCENTAGE_CHANGE) {
+  // Priradenie individualnych percentualnych zmien k prisluchajucim casovym intervalom
+  if (maxChange <= EXTRA_SMALL_PERCENTAGE_CHANGE) {
+    return EXTRA_SLOW_TIME_INTERVAL;
+  } else if (maxChange <= SMALL_PERCENTAGE_CHANGE) {
     return SLOW_TIME_INTERVAL;
   } else if (maxChange <= AVG_PERCENTAGE_CHANGE) {
     return AVG_TIME_INTERVAL;
-  } else {
+  } else if (maxChange <= LARGE_PERCENTAGE_CHANGE) {
     return FAST_TIME_INTERVAL;
+  } else {
+    return EXTRA_FAST_TIME_INTERVAL;
   }
 }
 
+// Funkcia pre senzor HY-SRF05, ktora zabezpecuje meranie vzdialenosti
 int measureUltrasonic() {
   int distance = ultrasonic.read();
 
@@ -153,6 +186,7 @@ int measureUltrasonic() {
   return distance;
 }
 
+// Funkcia pre senzor BME280, ktora zabezpecuje meranie teploty, hustoty a tlaku vzduchu
 void measureBME280(float& temperature, float& humidity, float& pressure) {
   temperature = bme.readTemperature();
   humidity = bme.readHumidity();
@@ -172,10 +206,13 @@ void measureBME280(float& temperature, float& humidity, float& pressure) {
   Serial.println(" hPa");
 }
 
+// Funkcia pre senzor MQ-135, ktora zabezpecuje meranie mnozstva oxidu uhliciteho vo vzduchu
 int measureGasSensor() {
-  int rzero = gasSensor.getRZero();                                    // Get RZero value
-  int correctedResistance = gasSensor.getCorrectedResistance(20, 33);  // Assuming 20°C & 33% humidity
-  int ppm = gasSensor.getCorrectedPPM(20, 33);                         // Assuming 20°C & 33% humidity
+  // Ziskanie aktualnej hodnoty RZero
+  int rzero = gasSensor.getRZero();
+  // Odhadujeme optimalne 20°C & 33% vlhkost
+  int correctedResistance = gasSensor.getCorrectedResistance(20, 33);
+  int ppm = gasSensor.getCorrectedPPM(20, 33);
 
   Serial.println("---------------");
 
@@ -191,9 +228,9 @@ int measureGasSensor() {
   return ppm;
 }
 
-// For gas and distance sensors
+// Funckia pre posielanie dat senzorov HY-SRF05 a MQ-135
 void sendSensorData(int value, const char* sensorType, float& formerValue) {
-  // Create the HTTP client
+  // Vytvorenie HTTP klienta
   WiFiClient http_client;
   const int httpPort = 80;
   String url = "/script2.php?" + String(sensorType) + "=" + String(value);
@@ -203,7 +240,7 @@ void sendSensorData(int value, const char* sensorType, float& formerValue) {
     delay(10);
     http_client.stop();
 
-    // Update formerValue after successful data transmission
+    // Aktualizacia predoslej hodnoty po uspesnom prenose dat
     formerValue = value;
 
     Serial.println(String(sensorType) + " value sent");
@@ -212,9 +249,9 @@ void sendSensorData(int value, const char* sensorType, float& formerValue) {
   }
 }
 
-// For bme sensor
+// Funckia pre posielanie dat senzoru BME280
 void sendSensorData(float value1, float value2, float value3, const char* sensorType, float& formerValue1, float& formerValue2, float& formerValue3) {
-  // Create the HTTP client
+  // Vytvorenie HTTP klienta
   WiFiClient http_client;
   const int httpPort = 80;
   String url = "/script2.php?" + String(sensorType) + "1=" + String(value1) + "&" + String(sensorType) + "2=" + String(value2) + "&" + String(sensorType) + "3=" + String(value3);
@@ -224,7 +261,7 @@ void sendSensorData(float value1, float value2, float value3, const char* sensor
     delay(10);
     http_client.stop();
 
-    // Update formerValues after successful data transmission
+    // Aktualizacia predoslych hodnot po uspesnom prenose dat
     formerValue1 = value1;
     formerValue2 = value2;
     formerValue3 = value3;
