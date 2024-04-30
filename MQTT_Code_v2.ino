@@ -1,4 +1,4 @@
-// Zahrnutie potrebných voľne dostupných knižníc z tretích strán
+// Zahrnutie potrebných voľne dostupných knižníc tretích strán
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include <Wire.h>
@@ -7,12 +7,12 @@
 #include <Ultrasonic.h>
 #include <MQ135.h>
 
-// WiFi parametre
-const char* ssid = "ANDY";
-const char* password = "feda43WEKAjeda34..BASEge";
+// Wi-Fi parametre
+const char* ssid = "TP-Link_EA46";
+const char* password = "41864432";
 
 // MQTT broker parametre
-const char* mqtt_server = "192.168.0.74";
+const char* mqtt_server = "192.168.1.100";
 const int mqtt_port = 1883;
 const char* mqtt_user = "mqtt_matus";
 const char* mqtt_password = "Metju123";
@@ -28,21 +28,21 @@ const char* mqtt_password = "Metju123";
 // Definície pre piny plynového senzora
 #define GAS_SENSOR_ANALOG_PIN A0
 // Hodnota RZero pre plynový senzor MQ-135, potrebné vložit správne nakalibrovanú hodnotu
-#define RZERO 156
+#define RZERO 105
 
-// Percentuálne makrá pre prácu s meniacimi sa hodnotami
-#define EXTRA_SMALL_PERCENTAGE_CHANGE 1.0
+// Percentuálne makrá pre prácu s meniacimi sa nameranými hodnotami
+#define EXTRA_SMALL_PERCENTAGE_CHANGE 2.0
 #define SMALL_PERCENTAGE_CHANGE 3.0
 #define AVG_PERCENTAGE_CHANGE 5.0
 #define LARGE_PERCENTAGE_CHANGE 7.0
 #define EXTRA_LARGE_PERCENTAGE_CHANGE 10.0
 
 // Makrá pre reprezentáciu intervalov odosielania(v milisekundách)
-#define EXTRA_FAST_TIME_INTERVAL 7000
-#define FAST_TIME_INTERVAL 10000
-#define AVG_TIME_INTERVAL 15000
-#define SLOW_TIME_INTERVAL 20000
-#define EXTRA_SLOW_TIME_INTERVAL 23000
+#define EXTRA_FAST_TIME_INTERVAL 10000
+#define FAST_TIME_INTERVAL 17500
+#define AVG_TIME_INTERVAL 25000
+#define SLOW_TIME_INTERVAL 32500
+#define EXTRA_SLOW_TIME_INTERVAL 40000
 
 // Potrebné inicializácie komponentov
 Ultrasonic ultrasonic(ULTRASONIC_TRIGGER_PIN, ULTRASONIC_ECHO_PIN);
@@ -99,7 +99,7 @@ void setup() {
 
 // Funckia loop(), ktorá sústavne cyklicky beží po funckii setup()
 void loop() {
-  // Kontrola pripojenia MQTT klienta, volanie funckie reconnect() pokial nie je pripojený 
+  // Kontrola pripojenia MQTT klienta, volanie funckie reconnect() pokial nie je pripojený
   if (!client.connected()) {
     reconnect();
   }
@@ -109,8 +109,8 @@ void loop() {
   Serial.println("------------------------------------------------");
   unsigned long currentMillis = millis();  // Get the current time
 
-  // Nasledujúce podmienky slúžia pre meranie hodnôt, následné porovnanie s predošlou hodnotou, na základe ktorého je vyhodnotený interval
-  // odosielania a proces samotného odosielania dat
+  /* Nasledujúce podmienky slúžia pre meranie hodnôt a následné porovnanie s predošlou hodnotou, 
+  na základe ktorého je vyhodnotený interval odosielania a proces samotného odosielania dát */
   int currentDistanceValue = measureUltrasonic();
   if (currentMillis - ultrasonicLastUpdateTime >= calculateInterval(formerDistanceValue, currentDistanceValue)) {
     sendSensorData(currentDistanceValue, "ultrasonic", formerDistanceValue);
@@ -130,7 +130,7 @@ void loop() {
     gasSensorLastUpdateTime = millis();
   }
 
-  // Oneskorenie aby sme predišli pretaženiu CPU
+  // Oneskorenie, aby sme predišli prípadnému pretaženiu CPU
   delay(2000);
 }
 
@@ -222,7 +222,7 @@ void measureBME280(float& temperature, float& humidity, float& pressure) {
 int measureGasSensor() {
   // Získanie aktuálnej hodnoty RZero
   int rzero = gasSensor.getRZero();
-  // Odhadujeme optimálne 20°C & 33% vlhkosť
+  // Odhadujeme optimálnu teplotu 20°C & 33% vlhkosť
   int correctedResistance = gasSensor.getCorrectedResistance(20, 33);
   // Výpočet hodnoty ppm a následné priradenia do premennej ppm
   int ppm = gasSensor.getCorrectedPPM(20, 33);
@@ -252,7 +252,7 @@ void sendSensorData(int value, const char* sensorType, float& formerValue) {
   String url = "/script2.php?" + String(sensorType) + "=" + String(value);
 
   // Kontrola spojenia so serverom
-  if (http_client.connect("192.168.0.74", httpPort)) {
+  if (http_client.connect("192.168.1.100", httpPort)) {
     // Konštrukcia a odosielanie HTTP GET Request na server so špecifickou adresou URL
     http_client.print(String("GET ") + url + " HTTP/1.1\r\n" + "Host: your_server_ip\r\n" + "Connection: close\r\n\r\n");
     delay(10);
@@ -275,7 +275,7 @@ void sendSensorData(float value1, float value2, float value3, const char* sensor
   const int httpPort = 80;
   String url = "/script2.php?" + String(sensorType) + "1=" + String(value1) + "&" + String(sensorType) + "2=" + String(value2) + "&" + String(sensorType) + "3=" + String(value3);
 
-  if (http_client.connect("192.168.0.74", httpPort)) {
+  if (http_client.connect("192.168.1.100", httpPort)) {
     http_client.print(String("GET ") + url + " HTTP/1.1\r\n" + "Host: your_server_ip\r\n" + "Connection: close\r\n\r\n");
     delay(10);
     http_client.stop();
@@ -290,10 +290,12 @@ void sendSensorData(float value1, float value2, float value3, const char* sensor
   }
 }
 
+// Predpríprava -> pri použití MQTT protokolu
 void callback(char* topic, byte* payload, unsigned int length) {
-  // Handle MQTT messages if needed
+  // Obslúž MQTT správy ak je potreba
 }
 
+// Predpríprava -> funkcia, ktorá sa periodicky pokúša pripojiť k MQTT broker
 void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
