@@ -249,7 +249,7 @@ void sendSensorData(int value, const char* sensorType, float& formerValue) {
   // Definícia HTTP portu servera
   const int httpPort = 80;
   // Vytvorenie URL pre HTTP GET Request s typom senzora a hodnotou
-  String url = "/script2.php?" + String(sensorType) + "=" + String(value);
+  String url = "/esp8266_to_database.php?" + String(sensorType) + "=" + String(value);
 
   // Kontrola spojenia so serverom
   if (http_client.connect("192.168.1.100", httpPort)) {
@@ -273,7 +273,7 @@ float& formerValue), s rozdielnym počtom parametrov pre zabezpečenie správnej
 void sendSensorData(float value1, float value2, float value3, const char* sensorType, float& formerValue1, float& formerValue2, float& formerValue3) {
   WiFiClient http_client;
   const int httpPort = 80;
-  String url = "/script2.php?" + String(sensorType) + "1=" + String(value1) + "&" + String(sensorType) + "2=" + String(value2) + "&" + String(sensorType) + "3=" + String(value3);
+  String url = "/esp8266_to_database.php?" + String(sensorType) + "1=" + String(value1) + "&" + String(sensorType) + "2=" + String(value2) + "&" + String(sensorType) + "3=" + String(value3);
 
   if (http_client.connect("192.168.1.100", httpPort)) {
     http_client.print(String("GET ") + url + " HTTP/1.1\r\n" + "Host: your_server_ip\r\n" + "Connection: close\r\n\r\n");
