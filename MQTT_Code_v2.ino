@@ -7,28 +7,28 @@
 #include <Ultrasonic.h>
 #include <MQ135.h>
 
-// Wi-Fi parametre
+// Wi-Fi prístupové parametre
 const char* ssid = "TP-Link_EA46";
 const char* password = "41864432";
 
-// MQTT broker parametre
+// MQTT broker prístupové parametre
 const char* mqtt_server = "192.168.1.100";
 const int mqtt_port = 1883;
 const char* mqtt_user = "mqtt_matus";
 const char* mqtt_password = "Metju123";
 
-// Definície pre piny ultrasonického senzora
+// Definície pre piny ultrasonického senzora HY-SRF05
 #define ULTRASONIC_TRIGGER_PIN D5
 #define ULTRASONIC_ECHO_PIN D6
 
-// Definície pre piny BME280 senzora
+// Definície pre piny senzora BME280
 #define BME_SCL D1
 #define BME_SDA D2
 
-// Definície pre piny plynového senzora
+// Definície pre piny plynového senzora MQ135
 #define GAS_SENSOR_ANALOG_PIN A0
-// Hodnota RZero pre plynový senzor MQ-135, potrebné vložit správne nakalibrovanú hodnotu
-#define RZERO 105
+// Hodnota RZero pre plynový senzor MQ135, potrebné vložit správne nakalibrovanú hodnotu
+#define RZERO 220
 
 // Percentuálne makrá pre prácu s meniacimi sa nameranými hodnotami
 #define EXTRA_SMALL_PERCENTAGE_CHANGE 2.0
@@ -56,7 +56,7 @@ unsigned long ultrasonicLastUpdateTime = 0;
 unsigned long bme280LastUpdateTime = 0;
 unsigned long gasSensorLastUpdateTime = 0;
 
-// Inicializácia predošlých premenných pre výpočet intervalov odosielania
+// Inicializácia predošlých(historických) premenných pre výpočet intervalov odosielania
 float formerDistanceValue = 0.0;
 float formerBmeTemperatureValue = 0.0;
 float formerBmeHumidityValue = 0.0;
@@ -107,10 +107,11 @@ void loop() {
   client.loop();
 
   Serial.println("------------------------------------------------");
-  unsigned long currentMillis = millis();  // Get the current time
+  // Získaj aktuálny čas
+  unsigned long currentMillis = millis();
 
-  /* Nasledujúce podmienky slúžia pre meranie hodnôt a následné porovnanie s predošlou hodnotou, 
-  na základe ktorého je vyhodnotený interval odosielania a proces samotného odosielania dát */
+  /* Nasledujúce podmienky slúžia pre meranie hodnôt a následné porovnanie s predošlými hodnotami, 
+  na základe ktorých je vyhodnotený interval odosielania a proces samotného odosielania dát */
   int currentDistanceValue = measureUltrasonic();
   if (currentMillis - ultrasonicLastUpdateTime >= calculateInterval(formerDistanceValue, currentDistanceValue)) {
     sendSensorData(currentDistanceValue, "ultrasonic", formerDistanceValue);
@@ -130,7 +131,7 @@ void loop() {
     gasSensorLastUpdateTime = millis();
   }
 
-  // Oneskorenie, aby sme predišli prípadnému pretaženiu CPU
+  // Oneskorenie(milisekundy), aby sme predišli prípadnému pretaženiu CPU
   delay(2000);
 }
 
@@ -160,7 +161,7 @@ unsigned long calculateBmeInterval(float formerValue1, float formerValue2, float
   float humidityChange = abs(formerValue2 - currentHumidity) / formerValue2 * 100.0;
   float pressureChange = abs(formerValue3 - currentPressure) / formerValue3 * 100.0;
 
-  /* Na rozdiel od ostatných senzorov, pri tomto senzore porovnaváme až tri merané hodnoty a vyberieme najvačší percentuálny rozdiel
+  /* Na rozdiel od ostatných senzorov, pri tomto senzore porovnaváme až tri merané hodnoty a vyberieme najvačší percentuálny rozdiel spomedzi meraných veličín 
   a následne priradíme vhodný interval */
   float maxChange = max(temperatureChange, max(humidityChange, pressureChange));
 
@@ -183,7 +184,7 @@ int measureUltrasonic() {
   // Prečíta hodnotu vzdialenosti z ultrasonického senzora
   int distance = ultrasonic.read();
 
-  // Kontrola, či sa hodnota nachádza v správnom rozsahu
+  // Kontrola, či sa hodnota nachádza v správnom rozsahu, pri nesprávnom vráti -1, ktorá reprezentuje tento stav
   if (distance <= 1 || distance >= 300) {
     distance = -1;
   }
@@ -199,7 +200,7 @@ int measureUltrasonic() {
 
 // Funkcia pre senzor BME280, ktorá zabezpečuje meranie teploty, hustoty a tlaku vzduchu
 void measureBME280(float& temperature, float& humidity, float& pressure) {
-  // Prečítanie hodnot teploty, vlhkosti a tlaku vzduchu a následný zápis do príslušných premenných
+  // Prečítanie hodnot teploty, vlhkosti a tlaku vzduchu zo senzorov a následný zápis do príslušných premenných
   temperature = bme.readTemperature();
   humidity = bme.readHumidity();
   pressure = bme.readPressure() / 100.0F;
@@ -218,7 +219,7 @@ void measureBME280(float& temperature, float& humidity, float& pressure) {
   Serial.println(" hPa");
 }
 
-// Funkcia pre senzor MQ-135, ktorá zabezpečuje meranie množstva oxidu uhličitého vo vzduchu
+// Funkcia pre senzor MQ135, ktorá zabezpečuje meranie množstva oxidu uhličitého vo vzduchu
 int measureGasSensor() {
   // Získanie aktuálnej hodnoty RZero
   int rzero = gasSensor.getRZero();
@@ -242,7 +243,7 @@ int measureGasSensor() {
   return ppm;
 }
 
-// Funckia pre posielanie dát senzorov HY-SRF05 a MQ-135
+// Funckia pre posielanie dát senzorov HY-SRF05 a MQ135
 void sendSensorData(int value, const char* sensorType, float& formerValue) {
   // Vytvorenie HTTP klienta pomocou inštancie triedy WiFiClient
   WiFiClient http_client;
@@ -288,11 +289,6 @@ void sendSensorData(float value1, float value2, float value3, const char* sensor
   } else {
     Serial.println("Unable to connect to server");
   }
-}
-
-// Predpríprava -> pri použití MQTT protokolu
-void callback(char* topic, byte* payload, unsigned int length) {
-  // Obslúž MQTT správy ak je potreba
 }
 
 // Predpríprava -> funkcia, ktorá sa periodicky pokúša pripojiť k MQTT broker
