@@ -82,7 +82,6 @@ void setup() {
   // pripojenie k MQTT broker pomocou serverovej adresy a portu
   Serial.println("Connecting to MQTT broker");
   client.setServer(mqtt_server, mqtt_port);
-  client.setCallback(callback);
 
   // Inicializácia I2C komunikácie pomocou portov definovaných v makrách
   Wire.begin(BME_SDA, BME_SCL);
