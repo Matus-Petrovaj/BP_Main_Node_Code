@@ -79,7 +79,7 @@ void setup() {
   Serial.println("");
   Serial.println("WiFi connected");
 
-  // pripojenie k MQTT broker pomocou serverovej adresy a portu
+  // Pripojenie k MQTT broker pomocou serverovej adresy a portu
   Serial.println("Connecting to MQTT broker");
   client.setServer(mqtt_server, mqtt_port);
 
@@ -164,7 +164,7 @@ unsigned long calculateBmeInterval(float formerValue1, float formerValue2, float
   a následne priradíme vhodný interval */
   float maxChange = max(temperatureChange, max(humidityChange, pressureChange));
 
-  // Priradenie individuálnych percentuálnych zmien k prislúchajúcim časovým intervalom
+  // Priradenie jednotlivých percentuálnych zmien k prislúchajúcim časovým intervalom
   if (maxChange <= EXTRA_SMALL_PERCENTAGE_CHANGE) {
     return EXTRA_SLOW_TIME_INTERVAL;
   } else if (maxChange <= SMALL_PERCENTAGE_CHANGE) {
@@ -268,7 +268,7 @@ void sendSensorData(int value, const char* sensorType, float& formerValue) {
   }
 }
 
-/* Funckia pre posielanie dát senzoru BME280, ktorá je modifikovanou funkciou funckie sendSensorData(int value, const char* sensorType, 
+/* Funckia pre posielanie dát senzoru BME280, ktorá je modifikovanou verziou funckie sendSensorData(int value, const char* sensorType, 
 float& formerValue), s rozdielnym počtom parametrov pre zabezpečenie správnej funkcionality pri použití senzora BME280 */
 void sendSensorData(float value1, float value2, float value3, const char* sensorType, float& formerValue1, float& formerValue2, float& formerValue3) {
   WiFiClient http_client;
