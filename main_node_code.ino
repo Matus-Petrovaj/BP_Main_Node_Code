@@ -28,7 +28,7 @@ const char* mqtt_password = "Metju123";
 // Definície pre piny plynového senzora MQ135
 #define GAS_SENSOR_ANALOG_PIN A0
 // Hodnota RZero pre plynový senzor MQ135, potrebné vložit správne nakalibrovanú hodnotu
-#define RZERO 220
+#define RZERO 250
 
 // Percentuálne makrá pre prácu s meniacimi sa nameranými hodnotami
 #define EXTRA_SMALL_PERCENTAGE_CHANGE 2.0
